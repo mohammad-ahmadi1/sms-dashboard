@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry]
+package-mode = false
+
+[project]
+name = "sms-dashboard"
+version = "1.0.0"
+description = "A responsive SMS dashboard with Gammu integration for GSM modem management"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "SMS Dashboard Team", email = "contact@smsdashboard.dev"}
+]
+keywords = ["sms", "gammu", "gsm", "modem", "dashboard", "flask"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: Flask"
+]
+requires-python = ">=3.8.1"
+dependencies = [
+    "flask>=2.3.0",
+    "flask-cors>=4.0.0",
+    "python-gammu>=3.2.4",
+    "gunicorn>=21.0.0",
+    "python-dotenv>=1.0.0",
+    "pyserial>=3.5"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=5.0.0; python_version >= '3.8.1'"
+]
+
+[project.urls]
+Homepage = "https://github.com/sms-dashboard/sms-dashboard"
+Repository = "https://github.com/sms-dashboard/sms-dashboard.git"
+Issues = "https://github.com/sms-dashboard/sms-dashboard/issues"
+
+[project.scripts]
+sms-dashboard = "app:main"
+sms-run = "app:run_server"
+
+[tool.poetry.scripts]
+run = "app:run_server"
+dev = "app:run_dev_server"
+start = "app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*.py"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--cov=sms_dashboard", "--cov-report=term-missing"]
