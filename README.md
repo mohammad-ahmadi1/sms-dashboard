@@ -178,7 +178,7 @@ To run the web application as a background service, you can create a `systemd` u
    WorkingDirectory=/home/<your-user>/<your-repository-directory>
    Restart=on-failure
    Environment=POETRY_VIRTUALENVS_IN_PROJECT=true
-   ExecStart=/usr/bin/poetry run uunicorn -w 4 -b 0.0.0.0:5000 app:app
+   ExecStart=/usr/bin/poetry run gunicorn -w 4 -b 0.0.0.0:5000 app:app
 
    [Install]
    WantedBy=multi-user.target

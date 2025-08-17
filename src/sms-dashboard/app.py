@@ -19,6 +19,16 @@ DB_CONFIG = {
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-default') # Used for flashing messages
 
+# Securely set SECRET_KEY: require in production, allow default in development
+secret_key = os.environ.get('SECRET_KEY')
+flask_env = os.environ.get('FLASK_ENV', 'production').lower()
+if not secret_key:
+    if flask_env == 'development':
+        secret_key = 'dev-default'
+        print("WARNING: Using default SECRET_KEY in development mode. Do not use in production!", flush=True)
+    else:
+        raise RuntimeError("SECRET_KEY environment variable must be set in production.")
+app.config['SECRET_KEY'] = secret_key  # Used for flashing messages
 # --- Database Connection ---
 def get_db_connection():
     """Establishes a connection to the MySQL database."""
