@@ -206,8 +206,8 @@ This project is open-source and available under the [MIT License](https://www.go
 
 <!-- 
 TODOs: 
-- clean up the readme
-- clean up the code 
-- long term test
+- [x] clean up the readme
+- [x] clean up the code
+- [ ] long term test
 
 -->
