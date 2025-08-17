@@ -1,76 +1,25 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.poetry]
-package-mode = false
-
 [project]
 name = "sms-dashboard"
-version = "1.0.0"
-description = "A responsive SMS dashboard with Gammu integration for GSM modem management"
-readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+version = "0.1.0"
+description = "A web-based dashboard for managing and monitoring SMS messages, built with Flask and MySQL."
 authors = [
-    {name = "SMS Dashboard Team", email = "contact@smsdashboard.dev"}
+    { name = "Mohammad Ahmadi", email = "mohammad.ahmadi98@proton.me" }
 ]
-keywords = ["sms", "gammu", "gsm", "modem", "dashboard", "flask"]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Framework :: Flask"
-]
-requires-python = ">=3.8.1"
+readme = "README.md"
+requires-python = ">=3.13"
 dependencies = [
-    "flask>=2.3.0",
-    "flask-cors>=4.0.0",
-    "python-gammu>=3.2.4",
-    "gunicorn>=21.0.0",
-    "python-dotenv>=1.0.0",
-    "pyserial>=3.5"
+    "Flask>=2.0",
+    "mysql-connector-python>=8.0",
+    "python-dotenv>=1.1.1",
+    "gunicorn>=23.0.0"
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=5.0.0; python_version >= '3.8.1'"
-]
 
-[project.urls]
-Homepage = "https://github.com/sms-dashboard/sms-dashboard"
-Repository = "https://github.com/sms-dashboard/sms-dashboard.git"
-Issues = "https://github.com/sms-dashboard/sms-dashboard/issues"
+[tool.poetry]
+packages = [{ include = "sms-dashboard", from = "src" }]
+package-mode = true
 
-[project.scripts]
-sms-dashboard = "app:main"
-sms-run = "app:run_server"
-
-[tool.poetry.scripts]
-run = "app:run_server"
-dev = "app:run_dev_server"
-start = "app:main"
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["*.py"]
-
-[tool.black]
-line-length = 88
-target-version = ['py38']
-
-[tool.isort]
-profile = "black"
-line_length = 88
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = ["--cov=sms_dashboard", "--cov-report=term-missing"]
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

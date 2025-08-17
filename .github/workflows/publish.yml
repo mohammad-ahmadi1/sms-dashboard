@@ -1,0 +1,45 @@
+# A modern, secure workflow to publish a Python distribution to PyPI.
+name: Publish Python 🐍 distribution 📦 to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Trigger the workflow on version tags
+
+jobs:
+  build-and-publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      # This permission is required for trusted publishing
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'poetry' # Enable caching for Poetry dependencies
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 'latest' # Or pin to a specific version like '1.8.2'
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish package to PyPI
+        # Uses the official PyPA action to publish, which handles trusted publishing automatically
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # This token is automatically provided by GitHub Actions
+          # and is used for trusted publishing to PyPI
+          pypi-token: ${{ secrets.PYPI_TOKEN }}
