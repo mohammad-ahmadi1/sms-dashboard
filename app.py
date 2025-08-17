@@ -17,7 +17,7 @@ DB_CONFIG = {
 
 # --- Flask Application ---
 app = Flask(__name__)
-app.secret_key = 'a_very_secret_key_for_flask_flashing' # Used for flashing messages
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-default') # Used for flashing messages
 
 # --- Database Connection ---
 def get_db_connection():
