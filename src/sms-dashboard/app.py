@@ -1,7 +1,10 @@
 import os
+import time
+import threading
 from dotenv import load_dotenv
 import mysql.connector
 from flask import Flask, render_template_string, redirect, url_for, flash, request
+import telegram
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,6 +17,10 @@ DB_CONFIG = {
     'password': os.environ.get('DB_PASSWORD'),
     'database': os.environ.get('DB_NAME'),
 }
+
+# Telegram Configuration
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # --- Flask Application ---
 app = Flask(__name__)
@@ -376,8 +383,58 @@ def bulk_action():
     return redirect(url_for('index'))
 
 
+# --- Telegram Bot ---
+def send_message_to_telegram(message):
+    """Sends a formatted message to a Telegram chat."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return  # Silently fail if not configured
+
+    try:
+        bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+        text = f"""New SMS from: {message['SenderNumber']}\n\n{message['TextDecoded']}\n\nReceived: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"""
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
+        print(f"Sent message to Telegram for SMS ID {message['ID']}")
+    except Exception as e:
+        print(f"Error sending message to Telegram: {e}")
+
+def poll_new_messages():
+    """Polls the database for new messages and sends them to Telegram."""
+    print("Starting background thread to poll for new messages...")
+    while True:
+        conn = get_db_connection()
+        if not conn:
+            print("Polling thread: Database connection failed. Retrying in 60s.")
+            time.sleep(60)
+            continue
+
+        cursor = conn.cursor(dictionary=True)
+        try:
+            # Fetch unread messages that haven't been processed by the bot yet
+            cursor.execute("SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime FROM inbox WHERE Processed = 'false'")
+            new_messages = cursor.fetchall()
+
+            for message in new_messages:
+                send_message_to_telegram(message)
+                # Mark message as processed so it's not sent again
+                cursor.execute("UPDATE inbox SET Processed = 'true' WHERE ID = %s", (message['ID'],))
+                conn.commit()
+                
+        except mysql.connector.Error as err:
+            print(f"Polling thread error: {err}")
+        finally:
+            cursor.close()
+            conn.close() 
+        
+        time.sleep(10) # Poll every 10 seconds
+
+
 # --- Main Execution ---
 if __name__ == '__main__':
+    # Start the background thread only if Telegram is configured
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        polling_thread = threading.Thread(target=poll_new_messages, daemon=True)
+        polling_thread.start()
+
     print("Starting Flask server...")
     print("Access the app at http://127.0.0.1:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)

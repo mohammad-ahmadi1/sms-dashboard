@@ -119,7 +119,36 @@ SECRET_KEY='A long random string for flask sessions'
 
 **Important:** The SECRET\_KEY is used by Flask to secure user sessions. For generating a long, random string use this command `python -c "import secrets; print(secrets.token_hex(32))"`
 
-### **4\. Running the Application**
+### **4. Configure Telegram Notifications (Optional)**
+
+To receive notifications for new SMS messages in a Telegram chat, you can provide a bot token and a chat ID.
+
+1.  **Create a Telegram Bot:**
+    *   Talk to the [BotFather](https://t.me/botfather) on Telegram to create a new bot.
+    *   He will give you a **token**. Add it to your `.env` file as `TELEGRAM_BOT_TOKEN`.
+
+2.  **Get your Chat ID:**
+    *   Send a message to your new bot.
+    *   Then, visit `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates` (replace `<YOUR_BOT_TOKEN>` with your token).
+    *   Look for the `"chat": {"id": ...}` field in the JSON response. That is your **chat ID**.
+    *   Add it to your `.env` file as `TELEGRAM_CHAT_ID`.
+
+Your `.env` file will look like this:
+
+```bash
+# .env file
+DB_HOST=localhost
+DB_USER=gammu_user
+DB_PASSWORD='your_secret_password'
+DB_NAME=gammu_db
+SECRET_KEY='A long random string for flask sessions'
+
+# Optional: For Telegram notifications
+TELEGRAM_BOT_TOKEN='your_telegram_bot_token'
+TELEGRAM_CHAT_ID='your_telegram_chat_id'
+```
+
+### **5\. Running the Application**
 
 #### Development Mode
 
