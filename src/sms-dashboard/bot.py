@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from .multipart import assemble_inbox_rows
 MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         [KeyboardButton("📥 Last 10 Messages"), KeyboardButton("📥 Last 20 Messages")],
@@ -78,11 +79,18 @@ def fetch_last_messages(limit=5):
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime FROM inbox ORDER BY ReceivingDateTime DESC LIMIT %s", (limit,)
+            """
+            SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed,
+                   UDH
+            FROM inbox
+            ORDER BY ReceivingDateTime DESC
+            LIMIT %s
+            """,
+            (limit,)
         )
-        messages = cursor.fetchall()
-        # Filter out messages with empty or None TextDecoded
-        messages = [m for m in messages if m.get('TextDecoded') and m['TextDecoded'].strip()]
+        rows = cursor.fetchall()
+        # Assemble multipart messages and drop empty/blank rows
+        messages = assemble_inbox_rows(rows)
     except mysql.connector.Error as err:
         print(f"Failed to fetch messages: {err}")
         messages = []

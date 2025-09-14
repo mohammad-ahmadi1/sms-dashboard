@@ -10,6 +10,7 @@ import urllib.parse
 from dotenv import load_dotenv
 import mysql.connector
 from flask import Flask, render_template_string, redirect, url_for, flash, request
+from .multipart import assemble_inbox_rows
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -298,8 +299,16 @@ def index():
 
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed FROM inbox ORDER BY ReceivingDateTime DESC")
-        messages = cursor.fetchall()
+        # Include UDH and SequencePosition to support multipart assembly when available
+        cursor.execute("""
+            SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed,
+                   UDH
+            FROM inbox
+            ORDER BY ReceivingDateTime DESC
+        """)
+        raw_messages = cursor.fetchall()
+        # Assemble multipart messages and drop empty/blank rows
+        messages = assemble_inbox_rows(raw_messages)
     except mysql.connector.Error as err:
         flash(f"Failed to fetch messages: {err}", "error")
         messages = []
@@ -544,8 +553,16 @@ def poll_new_messages():
         cursor = conn.cursor(dictionary=True)
         try:
             # Fetch unread messages that haven't been processed by the bot yet
-            cursor.execute("SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime FROM inbox WHERE Processed = 'false'")
-            new_messages = cursor.fetchall()
+            cursor.execute("""
+                SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed,
+                       UDH
+                FROM inbox
+                WHERE Processed = 'false'
+                ORDER BY ReceivingDateTime ASC
+            """)
+            raw_messages = cursor.fetchall()
+            # Assemble to avoid sending empty parts; keep only unread ones
+            new_messages = [m for m in assemble_inbox_rows(raw_messages) if str(m.get('Processed','')).lower() == 'false']
 
             for message in new_messages:
                 send_message_to_telegram(message)
