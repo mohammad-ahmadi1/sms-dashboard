@@ -400,12 +400,14 @@ def bulk_action():
 
 
 # --- Telegram Bot ---
-def _http_send_telegram_message(token: str, chat_id: str, text: str, parse_mode: str | None = None):
+def _http_send_telegram_message(token: str, chat_id: str, text: str, parse_mode: str | None = None, reply_markup: dict | None = None):
     """Send a message via Telegram Bot API using standard library (no extra deps)."""
     api_url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
     if parse_mode:
         payload["parse_mode"] = parse_mode
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(api_url, data=data, headers={"Content-Type": "application/json"})
     try:
@@ -426,10 +428,26 @@ def send_message_to_telegram(message):
             f"{message['TextDecoded']}\n\n"
             f"Received: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"
         )
-        _http_send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text)
+        
+        # Create an inline keyboard with a "Mark as Read" button
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "Mark as Read", "callback_data": f"read_{message['ID']}"}
+                ]
+            ]
+        }
+
+        _http_send_telegram_message(
+            TELEGRAM_BOT_TOKEN,
+            TELEGRAM_CHAT_ID,
+            text,
+            reply_markup=keyboard
+        )
         print(f"Sent message to Telegram for SMS ID {message['ID']}")
     except Exception as e:
         print(f"Error sending message to Telegram: {e}")
+
 
 async def _start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command with a helpful welcome & verification info."""
@@ -540,18 +558,27 @@ def _start_telegram_bot_background():
     th = threading.Thread(target=_runner, daemon=True, name="telegram-bot")
     th.start()
 
-def poll_new_messages():
-    """Polls the database for new messages and sends them to Telegram."""
-    print("Starting background thread to poll for new messages...")
+def pull_new_messages():
+    """Pulls the database for new messages and sends them to Telegram, caching last sent ID."""
+    print("Starting background thread to pull for new messages...")
+    last_sent_id = None
+
     while True:
         conn = get_db_connection()
         if not conn:
-            print("Polling thread: Database connection failed. Retrying in 60s.")
+            print("Pulling thread: Database connection failed. Retrying in 60s.")
             time.sleep(60)
             continue
 
         cursor = conn.cursor(dictionary=True)
         try:
+            # Clean up empty/blank messages first
+            cursor.execute("DELETE FROM inbox WHERE TextDecoded IS NULL OR TRIM(TextDecoded) = ''")
+            deleted = cursor.rowcount
+            if deleted > 0:
+                conn.commit()
+                print(f"Pulling thread: Removed {deleted} empty/blank messages.")
+
             # Fetch unread messages that haven't been processed by the bot yet
             cursor.execute("""
                 SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed,
@@ -561,29 +588,31 @@ def poll_new_messages():
                 ORDER BY ReceivingDateTime ASC
             """)
             raw_messages = cursor.fetchall()
-            # Assemble to avoid sending empty parts; keep only unread ones
             new_messages = [m for m in assemble_inbox_rows(raw_messages) if str(m.get('Processed','')).lower() == 'false']
 
+            # Only send messages with ID greater than last_sent_id
             for message in new_messages:
-                send_message_to_telegram(message)
-                # Mark message as processed so it's not sent again
-                cursor.execute("UPDATE inbox SET Processed = 'true' WHERE ID = %s", (message['ID'],))
-                conn.commit()
-                
+                msg_id = message.get('ID')
+
+                if last_sent_id is None or (msg_id is not None and msg_id > last_sent_id):
+                    send_message_to_telegram(message)
+                    if msg_id is not None:
+                        last_sent_id = msg_id
+    
         except mysql.connector.Error as err:
-            print(f"Polling thread error: {err}")
+            print(f"Pulling thread error: {err}")
         finally:
             cursor.close()
-            conn.close() 
+            conn.close()
         
-        time.sleep(10) # Poll every 10 seconds
+        time.sleep(10) # Pulls every 10 seconds
 
 
 # --- Main Execution ---
 if __name__ == '__main__':
     # Start the background thread only if Telegram is configured
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        polling_thread = threading.Thread(target=poll_new_messages, daemon=True)
+        polling_thread = threading.Thread(target=pull_new_messages, daemon=True)
         polling_thread.start()
 
     # Telegram command bot runs as a separate process via `python -m sms-dashboard.bot`.
