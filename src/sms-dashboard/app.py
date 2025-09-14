@@ -1,10 +1,17 @@
 import os
 import time
 import threading
+import socket
+import ipaddress
+from urllib.parse import urlparse
+import json
+import urllib.request
+import urllib.parse
 from dotenv import load_dotenv
 import mysql.connector
 from flask import Flask, render_template_string, redirect, url_for, flash, request
-import telegram
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Load environment variables from .env file
 load_dotenv()
@@ -384,18 +391,145 @@ def bulk_action():
 
 
 # --- Telegram Bot ---
+def _http_send_telegram_message(token: str, chat_id: str, text: str, parse_mode: str | None = None):
+    """Send a message via Telegram Bot API using standard library (no extra deps)."""
+    api_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(api_url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status != 200:
+                print(f"Telegram API non-200: {resp.status}")
+    except Exception as e:
+        print(f"Telegram sendMessage error: {e}")
+
 def send_message_to_telegram(message):
-    """Sends a formatted message to a Telegram chat."""
+    """Sends a formatted message to a Telegram chat for new SMS notifications."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return  # Silently fail if not configured
 
     try:
-        bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-        text = f"""New SMS from: {message['SenderNumber']}\n\n{message['TextDecoded']}\n\nReceived: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"""
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
+        text = (
+            f"New SMS from: {message['SenderNumber']}\n\n"
+            f"{message['TextDecoded']}\n\n"
+            f"Received: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"
+        )
+        _http_send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text)
         print(f"Sent message to Telegram for SMS ID {message['ID']}")
     except Exception as e:
         print(f"Error sending message to Telegram: {e}")
+
+async def _start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command with a helpful welcome & verification info."""
+    try:
+        bot = context.bot
+        me = await bot.get_me()
+        host = socket.gethostname()
+        
+        def get_server_ip() -> str:
+            # 1) Explicit env override
+            env_ip = os.environ.get('SERVER_IP')
+            if env_ip:
+                return env_ip
+            # 2) APP_PUBLIC_URL netloc if it's an IP
+            app_url = os.environ.get('APP_PUBLIC_URL')
+            if app_url:
+                try:
+                    netloc = urlparse(app_url).hostname
+                    if netloc:
+                        try:
+                            return str(ipaddress.ip_address(netloc))
+                        except ValueError:
+                            pass
+                except Exception:
+                    pass
+            # 3) UDP socket trick to infer outbound interface IP (LAN)
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("1.1.1.1", 80))
+                ip = s.getsockname()[0]
+                s.close()
+                return ip
+            except Exception:
+                return "unknown"
+
+        ip = get_server_ip()
+        env = os.environ.get('FLASK_ENV', 'production')
+        db_host = DB_CONFIG.get('host') or 'unknown'
+        db_name = DB_CONFIG.get('database') or 'unknown'
+        app_url = os.environ.get('APP_PUBLIC_URL', 'http://127.0.0.1:5000')
+        chat = update.effective_chat
+
+        lines = [
+            "✅ Bot is alive and ready!",
+            "",
+            f"Bot: @{me.username} (id: {me.id})",
+            f"Server: {host} ({ip})",
+            f"Environment: {env}",
+            f"Database: {db_name} @ {db_host}",
+            f"Dashboard: {app_url}",
+            "",
+            f"Current chat id: {chat.id}",
+        ]
+        # If a specific chat id is configured, hint whether we match it
+        if TELEGRAM_CHAT_ID:
+            try:
+                configured = int(TELEGRAM_CHAT_ID)
+                status = "MATCH" if configured == chat.id else "DIFFERENT"
+                lines.append(f"Configured TELEGRAM_CHAT_ID: {configured} ({status})")
+            except Exception:
+                lines.append(f"Configured TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
+
+        await update.effective_message.reply_text("\n".join(lines))
+    except Exception as e:
+        # Avoid crashing the handler
+        print(f"/start handler error: {e}")
+
+def _start_telegram_bot_background():
+    """Run python-telegram-bot Application in a background thread with /start."""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+
+    def _runner():
+        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        app.add_handler(CommandHandler("start", _start_command))
+
+        # Send a startup ping via HTTP helper (works outside event loop)
+        if TELEGRAM_CHAT_ID:
+            try:
+                host = socket.gethostname()
+                try:
+                    ip = socket.gethostbyname(host)
+                except Exception:
+                    ip = "unknown"
+                env = os.environ.get('FLASK_ENV', 'production')
+                app_url = os.environ.get('APP_PUBLIC_URL', 'http://127.0.0.1:5000')
+                text = (
+                    "🚀 Bot started successfully\n\n"
+                    f"Server: {host} ({ip})\n"
+                    f"Environment: {env}\n"
+                    f"Dashboard: {app_url}"
+                )
+                _http_send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text)
+            except Exception as e:
+                print(f"Startup ping failed: {e}")
+
+        print("Starting Telegram bot polling...")
+        # Disable signal handlers since we're not in main thread
+        try:
+            app.run_polling(
+                allowed_updates=["message", "chat_member", "my_chat_member"],
+                stop_signals=()
+            )
+        except TypeError:
+            # Older PTB: use close_loop=False to reduce signal handling
+            app.run_polling(allowed_updates=["message", "chat_member", "my_chat_member"], close_loop=False)
+
+    th = threading.Thread(target=_runner, daemon=True, name="telegram-bot")
+    th.start()
 
 def poll_new_messages():
     """Polls the database for new messages and sends them to Telegram."""
@@ -434,6 +568,9 @@ if __name__ == '__main__':
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         polling_thread = threading.Thread(target=poll_new_messages, daemon=True)
         polling_thread.start()
+
+    # Telegram command bot runs as a separate process via `python -m sms-dashboard.bot`.
+    # We don't start it here to avoid polling conflicts.
 
     print("Starting Flask server...")
     print("Access the app at http://127.0.0.1:5000")

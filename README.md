@@ -1,3 +1,54 @@
+### Development
+
+Run the Flask dashboard and the Telegram bot separately.
+
+1) Configure environment (example .env)
+
+```
+DB_HOST=localhost
+DB_USER=youruser
+DB_PASSWORD=yourpass
+DB_NAME=gammu
+SECRET_KEY=dev-default
+FLASK_ENV=development
+
+# Telegram
+TELEGRAM_BOT_TOKEN=123456:ABC-YourBotToken
+TELEGRAM_CHAT_ID=123456789  # optional for startup pings and SMS forwarding
+APP_PUBLIC_URL=http://127.0.0.1:5000
+
+# Override the IP shown in Telegram welcome
+SERVER_IP=192.168.1.100
+```
+
+2) Install deps and run
+
+```
+poetry install
+poetry run python -m sms-dashboard.app
+```
+
+3) Option A: Run both (app + bot) with one command
+
+```
+poetry run sms-dash-all
+```
+
+Option B: Run separately in two terminals
+
+```
+poetry run python -m sms-dashboard.bot
+```
+
+In Telegram, open your bot and send /start. You should receive a welcome message with:
+- Bot username and id
+- Server hostname/IP and environment
+- DB host/name
+- Dashboard URL
+- Current chat id and whether it matches TELEGRAM_CHAT_ID
+
+Notes
+- You can control the IP shown in the welcome message by setting SERVER_IP in your .env. If not set, the app tries APP_PUBLIC_URL (if it’s an IP) and then falls back to the active interface IP via a UDP probe.
 # **Gammu SMS Web Manager**
 
 A simple yet powerful Flask web application for managing SMS messages stored by [Gammu](https://wammu.eu/gammu/) in a MySQL database. This tool provides a modern, real-time web interface to view, manage, and receive notifications for incoming SMS.
@@ -52,16 +103,22 @@ device = /dev/ttyUSB0
 connection = at115200
 
 [smsd]
-service = mysql
+service = sql
 driver = native_mysql
 host = localhost
 user = gammu_user
-password = "<password>"
+password = <password>
 database = gammu_db
-logfile = /var/log/gammu-smsd.log
+logfile = syslog
 loglevel = debug
 
 ```
+
+```bash
+sudo systemctl start gammu-smsd
+sudo systemctl enable gammu-smsd
+```
+Check the status of the service `sudo systemctl status gammu-smsd`
 
 ### **3\. Set Up the MySQL Database**
 
@@ -70,9 +127,10 @@ The Gammu SMSD service needs a database to store messages.
 * Log in to your MySQL server and create a new database and user for Gammu.  
 
 ```sql
-  CREATE DATABASE gammu\_db;  
-  CREATE USER 'gammu\_user'@'localhost' IDENTIFIED BY 'your\_secret\_password';  
-  GRANT ALL PRIVILEGES ON gammu\_db.\* TO 'gammu\_user'@'localhost';  
+  CREATE DATABASE gammu_db;  
+  $CREATE USER 'gammu_user'@'localhost' IDENTIFIED BY 'your_secret_password'; 
+  USE gammu_db; 
+  GRANT ALL PRIVILEGES ON gammu_db.* TO 'gammu_user'@'localhost';
   FLUSH PRIVILEGES;  
   EXIT;
 ```
@@ -81,7 +139,7 @@ The Gammu SMSD service needs a database to store messages.
   \# The path to mysql.sql might be different on your system.  
   
   ```bash
-    mysql \-u gammu\_user \-p gammu\_db \< /usr/share/doc/gammu/examples/sql/mysql.sql
+    mysql -u gammu_user -p gammu_db < /usr/share/doc/gammu/examples/sql/mysql.sql
   ````
 
 ## **Part 2: Web App Setup and Installation**

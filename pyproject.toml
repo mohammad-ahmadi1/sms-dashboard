@@ -16,6 +16,10 @@ dependencies = [
     "python-telegram-bot (>=22.4,<23.0)"
 ]
 
+[tool.poetry.scripts]
+sms-dash = "app:main"
+sms-dash-all = "sms-dashboard.run_all:main"
+
 
 [tool.poetry]
 packages = [{ include = "sms-dashboard", from = "src" }]
