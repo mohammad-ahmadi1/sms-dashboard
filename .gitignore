@@ -8,3 +8,4 @@ __pycache__/
 *.sqlite3
 *.log
 .DS_Store
+message_ids.txt

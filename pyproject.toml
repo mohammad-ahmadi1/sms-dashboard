@@ -18,7 +18,9 @@ dependencies = [
 
 [tool.poetry.scripts]
 sms-dash = "app:main"
-sms-dash-all = "sms-dashboard.run_all:main"
+sms-dev = "sms-dashboard.run_dev:main"
+sms-prod = "sms-dashboard.run_production:main"
+
 
 
 [tool.poetry]

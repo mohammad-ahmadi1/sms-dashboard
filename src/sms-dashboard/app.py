@@ -558,10 +558,47 @@ def _start_telegram_bot_background():
     th = threading.Thread(target=_runner, daemon=True, name="telegram-bot")
     th.start()
 
+def remove_sent_ids(ids_to_remove):
+    """Removes specified IDs from the sent IDs cache file."""
+    SENT_IDS_FILE = os.path.join(os.path.dirname(__file__), "message_ids.txt")
+    try:
+        if os.path.exists(SENT_IDS_FILE):
+            with open(SENT_IDS_FILE, "r") as f:
+                all_ids = [line.strip() for line in f if line.strip().isdigit()]
+            # Convert both lists to integers for comparison
+            ids_to_remove_set = set(int(i) for i in ids_to_remove)
+            remaining_ids = [msg_id for msg_id in all_ids if int(msg_id) not in ids_to_remove_set]
+            with open(SENT_IDS_FILE, "w") as f:
+                for msg_id in remaining_ids:
+                    f.write(f"{msg_id}\n")
+    except Exception as e:
+        print(f"Error removing IDs from sent_message_ids.txt: {e}")
+
 def pull_new_messages():
     """Pulls the database for new messages and sends them to Telegram, caching last sent ID."""
     print("Starting background thread to pull for new messages...")
-    last_sent_id = None
+    SENT_IDS_FILE = os.path.join(os.path.dirname(__file__), "message_ids.txt")
+
+    def load_sent_ids():
+        if not os.path.exists(SENT_IDS_FILE):
+            return set()
+        try:
+            with open(SENT_IDS_FILE, "r") as f:
+                return set(int(line.strip()) for line in f if line.strip().isdigit())
+        except Exception as e:
+            print(f"Error loading sent IDs file: {e}")
+            return set()
+
+    def save_sent_ids(sent_ids):
+        try:
+            with open(SENT_IDS_FILE, "w") as f:
+                for msg_id in sorted(sent_ids):
+                    f.write(f"{msg_id}\n")
+        except Exception as e:
+            print(f"Error saving sent IDs file: {e}")
+    
+
+    sent_ids = load_sent_ids()
 
     while True:
         conn = get_db_connection()
@@ -588,23 +625,25 @@ def pull_new_messages():
                 ORDER BY ReceivingDateTime ASC
             """)
             raw_messages = cursor.fetchall()
-            new_messages = [m for m in assemble_inbox_rows(raw_messages) if str(m.get('Processed','')).lower() == 'false']
 
-            # Only send messages with ID greater than last_sent_id
-            for message in new_messages:
+            new_sent = False
+            for message in raw_messages:
                 msg_id = message.get('ID')
-
-                if last_sent_id is None or (msg_id is not None and msg_id > last_sent_id):
+                if msg_id is not None and int(msg_id) not in sent_ids:
                     send_message_to_telegram(message)
-                    if msg_id is not None:
-                        last_sent_id = msg_id
-    
+                    sent_ids.add(int(msg_id))
+                    new_sent = True
+                    time.sleep(1)  # Add delay to avoid Telegram rate limits
+
+            if new_sent:
+                save_sent_ids(sent_ids)
+
         except mysql.connector.Error as err:
             print(f"Pulling thread error: {err}")
         finally:
             cursor.close()
             conn.close()
-        
+
         time.sleep(10) # Pulls every 10 seconds
 
 

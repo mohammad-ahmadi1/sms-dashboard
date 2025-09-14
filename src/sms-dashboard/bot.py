@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-
+from . import app
 import mysql.connector
 
 from .multipart import assemble_inbox_rows
@@ -74,6 +74,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=query.message.text + "\n\n---\n✅ Marked as Read",
                     reply_markup=None  # Remove keyboard
                 )
+                print(f"Marked message ID {message_id} as read.")
+                app.remove_sent_ids([message_id])
             else:
                 await query.edit_message_text(
                     text=query.message.text + "\n\n---\n⚠️ Already marked as read or error.",
