@@ -4,71 +4,78 @@ import subprocess
 import sys
 import time
 from typing import List
+from dotenv import load_dotenv
+
+
+# Load .env to check for Telegram config
+load_dotenv()
 
 
 def _spawn(cmd: List[str]) -> subprocess.Popen:
     env = os.environ.copy()
+    # Use unbuffered output
+    env["PYTHONUNBUFFERED"] = "1"
     return subprocess.Popen(cmd, env=env)
 
 
 def main() -> int:
-    print("Starting Flask app and Telegram bot...")
+    print("Starting development server...")
     py = sys.executable
-
     procs: list[subprocess.Popen] = []
-    try:
-        app_cmd = [py, "-m", "sms-dashboard.app"]
-        bot_cmd = [py, "-m", "sms-dashboard.bot"]
 
+    try:
+        # Start Flask app
+        app_cmd = [py, "-m", "sms-dashboard.app"]
         app_proc = _spawn(app_cmd)
         procs.append(app_proc)
-        # Stagger start slightly so logs aren't interleaved at once
-        time.sleep(0.5)
-        bot_proc = _spawn(bot_cmd)
-        procs.append(bot_proc)
+        print(f"Started Flask app (PID: {app_proc.pid})")
 
-        print(f"App PID: {app_proc.pid} | Bot PID: {bot_proc.pid}")
-        print("Press Ctrl+C to stop both.")
+        # Conditionally start Telegram bot
+        if os.environ.get("TELEGRAM_BOT_TOKEN"):
+            bot_cmd = [py, "-m", "sms-dashboard.bot"]
+            bot_proc = _spawn(bot_cmd)
+            procs.append(bot_proc)
+            print(f"Started Telegram bot (PID: {bot_proc.pid})")
+        else:
+            print("TELEGRAM_BOT_TOKEN not found, skipping bot.")
 
-        # Wait until one of them exits
+        print("Press Ctrl+C to stop.")
+
+        # Wait for any process to exit
         while True:
-            if app_proc.poll() is not None:
-                print(f"Flask app exited with code {app_proc.returncode}")
-                break
-            if bot_proc.poll() is not None:
-                print(f"Telegram bot exited with code {bot_proc.returncode}")
-                break
+            for p in procs:
+                if p.poll() is not None:
+                    print(f"Process {p.pid} exited with code {p.returncode}. Stopping all services.")
+                    return 1  # Exit with an error code
             time.sleep(0.5)
 
-        return 0
     except KeyboardInterrupt:
-        print("\nStopping services...")
+        print("\nStopping all services...")
         return 0
     finally:
         # Terminate all children
-        for p in procs:
+        for p in reversed(procs):
             if p.poll() is None:
                 try:
+                    # Send SIGINT first for graceful shutdown
                     p.send_signal(signal.SIGINT)
                 except Exception:
                     pass
-        # Give them a moment to exit gracefully
-        t0 = time.time()
-        for p in procs:
-            while p.poll() is None and (time.time() - t0) < 5:
-                time.sleep(0.1)
-        for p in procs:
+        
+        # Wait for a moment
+        time.sleep(2)
+
+        # Force kill any remaining processes
+        for p in reversed(procs):
             if p.poll() is None:
                 try:
                     p.terminate()
+                    time.sleep(0.5)
+                    if p.poll() is None:
+                        p.kill()
                 except Exception:
                     pass
-        for p in procs:
-            if p.poll() is None:
-                try:
-                    p.kill()
-                except Exception:
-                    pass
+        print("All services stopped.")
 
 
 if __name__ == "__main__":
