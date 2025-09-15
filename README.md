@@ -204,7 +204,7 @@ MIT License. See [LICENSE](LICENSE).
 - Control the IP shown in Telegram welcome via `SERVER_IP` in `.env`.
 - If unset, falls back to `APP_PUBLIC_URL` or active interface IP.
 
----
+<!-- ---
 
 ## TODOs
 
@@ -213,5 +213,5 @@ MIT License. See [LICENSE](LICENSE).
 - [ ] Long-term test
 - [x] Telegram bot
 
----
+--- -->
 

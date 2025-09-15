@@ -50,12 +50,29 @@ def mark_message_as_read(message_id: int) -> bool:
         return False
     cursor = conn.cursor()
     try:
-        # Note: The column name is `Processed`, not `proceed`
         cursor.execute("UPDATE inbox SET Processed = 'true' WHERE ID = %s AND Processed = 'false'", (message_id,))
         conn.commit()
         return cursor.rowcount > 0
     except mysql.connector.Error as err:
         print(f"Error updating message: {err}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_message(message_id: int) -> bool:
+    """Deletes a specific message ID from the database."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM inbox WHERE ID = %s", (message_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except mysql.connector.Error as err:
+        print(f"Error deleting message: {err}")
         return False
     finally:
         cursor.close()
@@ -99,6 +116,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.edit_message_text(
                     text=query.message.text + "\n\n---\n⚠️ Already marked as read or error.",
+                    reply_markup=None
+                )
+        except (ValueError, IndexError):
+            await query.edit_message_text(
+                text=query.message.text + "\n\n---\n❌ Error processing command.",
+                reply_markup=None
+            )
+    elif action == 'delete':
+        try:
+            message_id = int(message_id_str)
+            if delete_message(message_id):
+                await query.edit_message_text(
+                    text=query.message.text + "\n\n---\n🗑️ Message Deleted",
+                    reply_markup=None
+                )
+                print(f"Deleted message ID {message_id}.")
+                remove_sent_ids([message_id])
+            else:
+                await query.edit_message_text(
+                    text=query.message.text + "\n\n---\n⚠️ Error deleting message or already deleted.",
                     reply_markup=None
                 )
         except (ValueError, IndexError):
@@ -184,7 +221,10 @@ async def send_messages_with_button(update: Update, context: ContextTypes.DEFAUL
         keyboard = None
         if m['Processed'] == 'false':
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Mark as Read", callback_data=f"read_{m['ID']}")]
+                [
+                    InlineKeyboardButton("Mark as Read", callback_data=f"read_{m['ID']}"),
+                    InlineKeyboardButton("Delete", callback_data=f"delete_{m['ID']}")
+                ]
             ])
 
         await update.effective_message.reply_text(text, reply_markup=keyboard)
@@ -289,7 +329,8 @@ def send_message_to_telegram(message):
         keyboard = {
             "inline_keyboard": [
                 [
-                    {"text": "Mark as Read", "callback_data": f"read_{message['ID']}"}
+                    {"text": "Mark as Read", "callback_data": f"read_{message['ID']}"},
+                    {"text": "Delete", "callback_data": f"delete_{message['ID']}"}
                 ]
             ]
         }
