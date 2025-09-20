@@ -1,213 +1,217 @@
-# **Gammu SMS Web Manager**
 
-A simple yet powerful Flask web application for managing SMS messages stored by [Gammu](https://wammu.eu/gammu/) in a MySQL database. This tool provides a modern, real-time web interface to view, manage, and receive notifications for incoming SMS.
+# Gammu SMS Web Manager
 
-## **Features**
+A modern Flask web application for managing SMS messages stored by [Gammu](https://wammu.eu/gammu/) in a MySQL database. Features a real-time, responsive dashboard and optional Telegram notifications.
 
-* **Modern UI:** A clean, responsive user interface built with Tailwind CSS.  
-* **Real-Time Notifications:** Get instant browser notifications when a new SMS arrives.  
-* **Live UI Updates:** The message list updates automatically, without needing a page refresh.  
-* **Bulk Actions:** Select multiple messages to mark as read or delete them all at once.  
-* **Easy Setup:** Single-file application with minimal dependencies.  
-* **Custom Modals:** A polished user experience with custom confirmation dialogs instead of native browser alerts.
+---
 
-## **Prerequisites**
+## Features
 
-* Python 3.13.1+
-* A GSM modem or mobile phone that can be connected to your server. (I used [GPRS SIM800 Module](https://de.aliexpress.com/item/4000890352364.html?spm=a2g0o.order_list.order_list_main.5.53971802mb0CD6&gatewayAdapt=glo2deu))
-* A MySQL server.  
-* Poetry For dependency management.
-* [asdf](https://asdf-vm.com/) (optional)
+- **Modern UI:** Responsive interface built with Tailwind CSS.
+- **Real-Time Notifications:** Instant browser notifications for new SMS.
+- **Live UI Updates:** Message list updates automatically.
+- **Bulk Actions:** Mark as read or delete multiple messages at once.
+- **Easy Setup:** Minimal dependencies, single-file application.
+- **Custom Modals:** Polished dialogs for confirmations.
 
-## **Part 1: Gammu Installation and Configuration**
+---
 
-Before setting up the web app, you need to install and configure Gammu (smsdrc) to store SMS messages in your MySQL database.
+## Prerequisites
 
-### **1\. Install Gammu and SMSD**
+- Python 3.13.1+
+- GSM modem or compatible mobile device (e.g., [SIM800 Module](https://de.aliexpress.com/item/4000890352364.html?spm=a2g0o.order_list.order_list_main.5.53971802mb0CD6&gatewayAdapt=glo2deu))
+- MySQL server
+- Poetry (dependency management)
+- [asdf](https://asdf-vm.com/) (optional)
 
-On Debian-based Linux distributions (like Ubuntu or Raspberry Pi OS), you can install Gammu and the Gammu SMS Daemon (SMSD) using the package manager.
+---
+
+## 1. Gammu Installation & Configuration
+
+### Install Gammu & SMSD
 
 ```bash
-  sudo apt-get update  
-  sudo apt-get install gammu gammu-smsd
+sudo apt-get update
+sudo apt-get install gammu gammu-smsd
 ```
 
-### **2\. Configure gammu-smsd to Connect to Your Modem**
+### Configure Gammu
 
-First, you need to configure Gammu to recognize your modem.
+Connect your modem (e.g., `/dev/ttyUSB0`). Create `/etc/gammu-smsdrc`:
 
-* Connect your modem to the server. It will usually be available at a path like `/dev/ttyUSB0` or `/dev/ttyACM0`.  
-* Create `/etc/gammu-smsdrc` file like below:
-
-```bash
-  sudo nano /etc/gammu-smsdrc
-```
-
-This is an example of `gammu-smsdrc` config:
-
-```bash
-
+```ini
 [gammu]
 device = /dev/ttyUSB0
 connection = at115200
 
 [smsd]
-service = mysql
+service = sql
 driver = native_mysql
 host = localhost
 user = gammu_user
-password = "<password>"
+password = <password>
 database = gammu_db
-logfile = /var/log/gammu-smsd.log
+logfile = syslog
 loglevel = debug
-
 ```
 
-### **3\. Set Up the MySQL Database**
+Start and enable the service:
 
-The Gammu SMSD service needs a database to store messages.
+```bash
+sudo systemctl start gammu-smsd
+sudo systemctl enable gammu-smsd
+sudo systemctl status gammu-smsd
+```
 
-* Log in to your MySQL server and create a new database and user for Gammu.  
+### Set Up MySQL Database
 
 ```sql
-  CREATE DATABASE gammu\_db;  
-  CREATE USER 'gammu\_user'@'localhost' IDENTIFIED BY 'your\_secret\_password';  
-  GRANT ALL PRIVILEGES ON gammu\_db.\* TO 'gammu\_user'@'localhost';  
-  FLUSH PRIVILEGES;  
-  EXIT;
+CREATE DATABASE gammu_db;
+CREATE USER 'gammu_user'@'localhost' IDENTIFIED BY 'your_secret_password';
+GRANT ALL PRIVILEGES ON gammu_db.* TO 'gammu_user'@'localhost';
+FLUSH PRIVILEGES;
 ```
 
-* Gammu comes with a SQL script to create the necessary tables. Find and import it into your new database. The path may vary, but it's often found here:  
-  \# The path to mysql.sql might be different on your system.  
-  
-  ```bash
-    mysql \-u gammu\_user \-p gammu\_db \< /usr/share/doc/gammu/examples/sql/mysql.sql
-  ````
-
-## **Part 2: Web App Setup and Installation**
-
-Now that Gammu is configured, you can set up the web application to manage the messages.
-
-### **1\. Clone the Repository**
+Import Gammu's SQL schema (path may vary):
 
 ```bash
-git clone <your-repository-url>  
+mysql -u gammu_user -p gammu_db < /usr/share/doc/gammu/examples/sql/mysql.sql
+```
+
+---
+
+## 2. Web App Setup
+
+### Clone & Install
+
+```bash
+git clone <your-repository-url>
 cd <your-repository-directory>
+poetry install
 ```
 
-### **2\. Install Dependencies**
+### Configure Environment
 
-Use Poetry to install the required Python packages from the pyproject.toml file.  
-`poetry install`
+Create a `.env` file (see example below):
 
-### **3\. Configure Environment Variables**
+```env
+DB_HOST=localhost
+DB_USER=gammu_user
+DB_PASSWORD=your_secret_password
+DB_NAME=gammu_db
+SECRET_KEY=<random_string>
+FLASK_ENV=development
 
-Create a .env file to hold your database credentials. **These must match the credentials you used for Gammu SMSD.**  
-\# You can create this from scratch or copy an example if one exists  
-nano .env
-
-Add the following content to the .env file:  
-
-```bash
-# .env file  
-DB_HOST=localhost  
-DB_USER=gammu_user  
-DB_PASSWORD='your_secret_password'  
-DB_NAME=gammu_db  
-SECRET_KEY='A long random string for flask sessions'
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN=123456:ABC-YourBotToken
+TELEGRAM_CHAT_ID=123456789
+APP_PUBLIC_URL=http://127.0.0.1:5000
+SERVER_IP=192.168.1.100
 ```
 
-**Important:** The SECRET\_KEY is used by Flask to secure user sessions. For generating a long, random string use this command `python -c "import secrets; print(secrets.token_hex(32))"`
-
-### **4\. Running the Application**
-
-#### Development Mode
-
-Once the setup is complete, you can run the Flask application:  
-`poetry run python app.py`
-You will see output in your terminal indicating that the server is running:  
-Starting Flask server...  
-Access the app at <http://127.0.0.1:5000>
-
-Open your web browser and navigate to **<http://127.0.0.1:5000>** to start using the SMS manager.
-
-#### Production Mode
-
-For production deployments, it is recommended to use a production-ready WSGI server like [Gunicorn](https://gunicorn.org/).
-
-First, install Gunicorn (if not already installed):
+Generate a secure `SECRET_KEY`:
 
 ```bash
-poetry add gunicorn
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Then, run the application with Gunicorn:
+---
+
+## 3. Telegram Notifications (Optional)
+
+- Create a bot via [BotFather](https://t.me/botfather).
+- Add `TELEGRAM_BOT_TOKEN` to `.env`.
+- Get your chat ID by messaging your bot and visiting:
+  ```
+  https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+  ```
+- Add `TELEGRAM_CHAT_ID` to `.env`.
+
+---
+
+## 4. Running the Application
+
+
+### Development
+
+Run the dashboard and bot separately:
 
 ```bash
-poetry run gunicorn app:app
+poetry run python -m sms-dashboard.app
+poetry run python -m sms-dashboard.bot
 ```
 
-You can adjust the number of worker processes and bind to a specific address/port as needed:
+Or run both with one command (process manager):
 
 ```bash
-poetry run gunicorn -w 4 -b 0.0.0.0:5000 app:app
+poetry run sms-dev
 ```
 
-For best results, consider running Gunicorn behind a reverse proxy such as Nginx for improved security and performance.
+Open your browser at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
-##### **Running with systemd and Gunicorn**
+### Production (Gunicorn)
 
-To run the web application as a background service, you can create a `systemd` unit file for Gunicorn.
+**Important:** Gunicorn should be pointed directly at the Flask app instance, not at the process manager script.
 
-1. **Create a systemd service file** (replace `<your-user>` and `<your-repository-directory>` as needed):
-
-   ```bash
-   sudo nano /etc/systemd/system/gammu-sms-web.service
-   ```
-
-2. **Add the following content:**
-
-   ```ini
-   [Unit]
-   Description=Gammu SMS Web Manager (Gunicorn)
-   After=network.target
-
-   [Service]
-   User=<your-user>
-   Group=www-data
-   WorkingDirectory=/home/<your-user>/<your-repository-directory>
-   Restart=on-failure
-   Environment=POETRY_VIRTUALENVS_IN_PROJECT=true
-   ExecStart=/usr/bin/poetry run gunicorn -w 4 -b 0.0.0.0:5000 app:app
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-3. **Reload systemd and start the service:**
-
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl start gammu-sms-web
-   sudo systemctl enable gammu-sms-web
-   ```
-
-4. **Check the status:**
+Run with Gunicorn:
 
 ```bash
+poetry run sms-prod
+```
+
+If your Flask app uses a different entrypoint, adjust `sms-dashboard.app:app` accordingly.
+
+#### systemd Service Example
+
+Create `/etc/systemd/system/gammu-sms-web.service`:
+
+```ini
+[Unit]
+Description=Gammu SMS Web Manager (Gunicorn)
+After=network.target
+
+[Service]
+User=<your-user>
+Group=www-data
+WorkingDirectory=/home/<your-user>/<your-repository-directory>
+Restart=on-failure
+Environment=POETRY_VIRTUALENVS_IN_PROJECT=true
+ExecStart=/usr/bin/poetry run sms-prod
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Reload and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start gammu-sms-web
+sudo systemctl enable gammu-sms-web
 sudo systemctl status gammu-sms-web
 ```
 
-Your Flask app will now run as a service and restart automatically if it crashes or the server reboots.
+---
 
-## **License**
+## License
 
-This project is open-source and available under the [MIT License](https://www.google.com/search?q=LICENSE).
+MIT License. See [LICENSE](LICENSE).
 
-<!-- 
-TODOs: 
-- [x] clean up the readme
-- [x] clean up the code
-- [ ] long term test
+---
 
--->
+## Notes
+
+- Control the IP shown in Telegram welcome via `SERVER_IP` in `.env`.
+- If unset, falls back to `APP_PUBLIC_URL` or active interface IP.
+
+<!-- ---
+
+## TODOs
+
+- [x] Clean up the README
+- [x] Clean up the code
+- [ ] Long-term test
+- [x] Telegram bot
+
+--- -->
+

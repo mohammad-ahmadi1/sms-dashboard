@@ -1,7 +1,8 @@
 import os
-from dotenv import load_dotenv
 import mysql.connector
+from dotenv import load_dotenv
 from flask import Flask, render_template_string, redirect, url_for, flash, request
+from .multipart import assemble_inbox_rows
 
 # Load environment variables from .env file
 load_dotenv()
@@ -284,8 +285,16 @@ def index():
 
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed FROM inbox ORDER BY ReceivingDateTime DESC")
-        messages = cursor.fetchall()
+        # Include UDH and SequencePosition to support multipart assembly when available
+        cursor.execute("""
+            SELECT ID, SenderNumber, TextDecoded, ReceivingDateTime, Processed,
+                   UDH
+            FROM inbox
+            ORDER BY ReceivingDateTime DESC
+        """)
+        raw_messages = cursor.fetchall()
+        # Assemble multipart messages and drop empty/blank rows
+        messages = assemble_inbox_rows(raw_messages)
     except mysql.connector.Error as err:
         flash(f"Failed to fetch messages: {err}", "error")
         messages = []

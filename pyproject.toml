@@ -12,9 +12,13 @@ dependencies = [
     "Flask>=2.0",
     "mysql-connector-python>=8.0",
     "python-dotenv>=1.1.1",
-    "gunicorn>=23.0.0"
+    "gunicorn>=23.0.0",
+    "python-telegram-bot (>=22.4,<23.0)"
 ]
 
+[tool.poetry.scripts]
+sms-dev = "sms-dashboard.run_dev:main"
+sms-prod = "sms-dashboard.run_production:main"
 
 [tool.poetry]
 packages = [{ include = "sms-dashboard", from = "src" }]
