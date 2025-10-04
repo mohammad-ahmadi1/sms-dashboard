@@ -172,7 +172,7 @@ After=network.target
 [Service]
 User=<your-user>
 Group=www-data
-**WorkingDirectory=/home/<your-user>/<your-repository-directory>**
+WorkingDirectory=/home/<your-user>/<your-repository-directory>
 Restart=on-failure
 Environment=POETRY_VIRTUALENVS_IN_PROJECT=true
 ExecStart=/usr/bin/poetry run sms-prod
