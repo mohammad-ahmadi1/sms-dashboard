@@ -67,7 +67,7 @@ sudo systemctl status gammu-smsd
 
 ```sql
 CREATE DATABASE gammu_db;
-CREATE USER 'gammu_user'@'localhost' IDENTIFIED BY 'your_secret_password';
+$ CREATE USER 'gammu_user'@'localhost' IDENTIFIED BY 'your_secret_password';
 GRANT ALL PRIVILEGES ON gammu_db.* TO 'gammu_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
@@ -85,12 +85,18 @@ mysql -u gammu_user -p gammu_db < /usr/share/doc/gammu/examples/sql/mysql.sql
 ### Clone & Install
 
 ```bash
-git clone <your-repository-url>
-cd <your-repository-directory>
+git clone git@github.com:mohammad-ahmadi1/sms-dashboard.git
+cd sms-dashboard
 poetry install
 ```
 
 ### Configure Environment
+
+Generate a secure `SECRET_KEY`:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
 Create a `.env` file (see example below):
 
@@ -109,28 +115,21 @@ APP_PUBLIC_URL=http://127.0.0.1:5000
 SERVER_IP=192.168.1.100
 ```
 
-Generate a secure `SECRET_KEY`:
-
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
----
-
 ## 3. Telegram Notifications (Optional)
 
 - Create a bot via [BotFather](https://t.me/botfather).
 - Add `TELEGRAM_BOT_TOKEN` to `.env`.
 - Get your chat ID by messaging your bot and visiting:
-  ```
+  
+  ```bash
   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
   ```
+
 - Add `TELEGRAM_CHAT_ID` to `.env`.
 
 ---
 
 ## 4. Running the Application
-
 
 ### Development
 
@@ -173,7 +172,7 @@ After=network.target
 [Service]
 User=<your-user>
 Group=www-data
-WorkingDirectory=/home/<your-user>/<your-repository-directory>
+**WorkingDirectory=/home/<your-user>/<your-repository-directory>**
 Restart=on-failure
 Environment=POETRY_VIRTUALENVS_IN_PROJECT=true
 ExecStart=/usr/bin/poetry run sms-prod
@@ -214,4 +213,3 @@ MIT License. See [LICENSE](LICENSE).
 - [x] Telegram bot
 
 --- -->
-
