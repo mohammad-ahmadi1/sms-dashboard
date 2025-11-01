@@ -19,6 +19,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+TELEGRAM_MASKAN_CHAT_ID = os.environ.get("TELEGRAM_MASKAN_CHAT_ID")
 
 # App context info (for verification)
 DB_HOST = os.environ.get("DB_HOST", "localhost")
@@ -315,16 +316,20 @@ def _http_send_telegram_message(token: str, chat_id: str, text: str, parse_mode:
 
 def send_message_to_telegram(message):
     """Sends a formatted message to a Telegram chat for new SMS notifications."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         return  # Silently fail if not configured
 
-    try:
-        text = (
-            f"New SMS from: {message['SenderNumber']}\n\n"
-            f"{message['TextDecoded']}\n\n"
-            f"Received: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"
-        )
-        
+    is_maskan_message = 'maskan' in message['SenderNumber'].lower()
+    
+    chat_id = None
+    keyboard = None
+
+    if is_maskan_message and TELEGRAM_MASKAN_CHAT_ID:
+        chat_id = TELEGRAM_MASKAN_CHAT_ID
+        # No keyboard for Maskan messages
+            
+    elif TELEGRAM_CHAT_ID:
+        chat_id = TELEGRAM_CHAT_ID
         # Create an inline keyboard with a "Mark as Read" button
         keyboard = {
             "inline_keyboard": [
@@ -335,13 +340,38 @@ def send_message_to_telegram(message):
             ]
         }
 
+    if not chat_id:
+        return # No chat ID configured for this message type
+
+    try:
+        text = (
+            f"New SMS from: {message['SenderNumber']}\n\n"
+            f"{message['TextDecoded']}\n\n"
+            f"Received: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"
+        )
+
         _http_send_telegram_message(
             TELEGRAM_BOT_TOKEN,
-            TELEGRAM_CHAT_ID,
+            chat_id,
             text,
             reply_markup=keyboard
         )
-        print(f"Sent message to Telegram for SMS ID {message['ID']}")
+        if is_maskan_message:
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "Mark as Read", "callback_data": f"read_{message['ID']}"},
+                        {"text": "Delete", "callback_data": f"delete_{message['ID']}"}
+                    ]
+                ]
+            }
+            _http_send_telegram_message(
+                TELEGRAM_BOT_TOKEN,
+                TELEGRAM_CHAT_ID,
+                text,
+                reply_markup=keyboard
+            )
+        print(f"Sent message to Telegram for SMS ID {message['ID']} to chat ID {chat_id}")
     except Exception as e:
         print(f"Error sending message to Telegram: {e}")
 
