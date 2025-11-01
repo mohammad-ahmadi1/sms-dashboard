@@ -1,6 +1,7 @@
 import os
 import socket
 import ipaddress
+import re
 import json
 import threading
 import time
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 import mysql.connector
+import logging
 
 from .multipart import assemble_inbox_rows
 
@@ -17,8 +19,17 @@ from .multipart import assemble_inbox_rows
 # Load .env
 load_dotenv()
 
+# Minimal logging setup for this module. Honor LOG_LEVEL env var, default to INFO.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+TELEGRAM_MASKAN_CHAT_ID = os.environ.get("TELEGRAM_MASKAN_CHAT_ID")
 
 # App context info (for verification)
 DB_HOST = os.environ.get("DB_HOST", "localhost")
@@ -39,7 +50,7 @@ def get_db_connection():
         )
         return conn
     except mysql.connector.Error as err:
-        print(f"Error connecting to database: {err}")
+        logger.error("Error connecting to database: %s", err)
         return None
 
 
@@ -54,7 +65,7 @@ def mark_message_as_read(message_id: int) -> bool:
         conn.commit()
         return cursor.rowcount > 0
     except mysql.connector.Error as err:
-        print(f"Error updating message: {err}")
+        logger.error("Error updating message %s: %s", message_id, err)
         return False
     finally:
         cursor.close()
@@ -72,7 +83,7 @@ def delete_message(message_id: int) -> bool:
         conn.commit()
         return cursor.rowcount > 0
     except mysql.connector.Error as err:
-        print(f"Error deleting message: {err}")
+        logger.error("Error deleting message %s: %s", message_id, err)
         return False
     finally:
         cursor.close()
@@ -92,7 +103,7 @@ def remove_sent_ids(ids_to_remove):
                 for msg_id in remaining_ids:
                     f.write(f"{msg_id}\n")
     except Exception as e:
-        print(f"Error removing IDs from sent_message_ids.txt: {e}")
+        logger.error("Error removing IDs from sent_message_ids.txt: %s", e)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +122,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=query.message.text + "\n\n---\n✅ Marked as Read",
                     reply_markup=None  # Remove keyboard
                 )
-                print(f"Marked message ID {message_id} as read.")
+                logger.info("Marked message ID %s as read.", message_id)
                 remove_sent_ids([message_id])
             else:
                 await query.edit_message_text(
@@ -131,7 +142,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=query.message.text + "\n\n---\n🗑️ Message Deleted",
                     reply_markup=None
                 )
-                print(f"Deleted message ID {message_id}.")
+                logger.info("Deleted message ID %s.", message_id)
                 remove_sent_ids([message_id])
             else:
                 await query.edit_message_text(
@@ -199,7 +210,7 @@ def fetch_last_messages(limit=5):
         # Assemble multipart messages and drop empty/blank rows
         messages = assemble_inbox_rows(rows)
     except mysql.connector.Error as err:
-        print(f"Failed to fetch messages: {err}")
+        logger.error("Failed to fetch messages: %s", err)
         messages = []
     finally:
         cursor.close()
@@ -295,7 +306,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text("\n".join(lines))
 
 
-def _http_send_telegram_message(token: str, chat_id: str, text: str, parse_mode: str | None = None, reply_markup: dict | None = None):
+def _http_send_telegram_message(token: str, chat_id: str | None, text: str, parse_mode: str | None = None, reply_markup: dict | None = None):
     """Send a message via Telegram Bot API using standard library (no extra deps)."""
     api_url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
@@ -308,23 +319,27 @@ def _http_send_telegram_message(token: str, chat_id: str, text: str, parse_mode:
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             if resp.status != 200:
-                print(f"Telegram API non-200: {resp.status}")
+                logger.warning("Telegram API non-200: %s", resp.status)
     except Exception as e:
-        print(f"Telegram sendMessage error: {e}")
+        logger.error("Telegram sendMessage error: %s", e)
 
 
 def send_message_to_telegram(message):
     """Sends a formatted message to a Telegram chat for new SMS notifications."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         return  # Silently fail if not configured
 
-    try:
-        text = (
-            f"New SMS from: {message['SenderNumber']}\n\n"
-            f"{message['TextDecoded']}\n\n"
-            f"Received: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"
-        )
-        
+    is_maskan_message = bool(re.search(r"(?i)\bmaskan\b", message['SenderNumber']))
+    
+    chat_id = None
+    keyboard = None
+
+    if is_maskan_message and TELEGRAM_MASKAN_CHAT_ID:
+        chat_id = TELEGRAM_MASKAN_CHAT_ID
+        # No keyboard for Maskan messages
+            
+    elif TELEGRAM_CHAT_ID:
+        chat_id = TELEGRAM_CHAT_ID
         # Create an inline keyboard with a "Mark as Read" button
         keyboard = {
             "inline_keyboard": [
@@ -335,20 +350,45 @@ def send_message_to_telegram(message):
             ]
         }
 
+    if not chat_id:
+        return # No chat ID configured for this message type
+
+    try:
+        text = (
+            f"New SMS from: {message['SenderNumber']}\n\n"
+            f"{message['TextDecoded']}\n\n"
+            f"Received: {message['ReceivingDateTime'].strftime('%B %d, %Y at %I:%M %p')}"
+        )
+
         _http_send_telegram_message(
             TELEGRAM_BOT_TOKEN,
-            TELEGRAM_CHAT_ID,
+            chat_id,
             text,
             reply_markup=keyboard
         )
-        print(f"Sent message to Telegram for SMS ID {message['ID']}")
+        if is_maskan_message:
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "Mark as Read", "callback_data": f"read_{message['ID']}"},
+                        {"text": "Delete", "callback_data": f"delete_{message['ID']}"}
+                    ]
+                ]
+            }
+            _http_send_telegram_message(
+                TELEGRAM_BOT_TOKEN,
+                TELEGRAM_CHAT_ID,
+                text,
+                reply_markup=keyboard
+            )
+        logger.info("Sent message to Telegram for SMS ID %s to chat ID %s", message['ID'], chat_id)
     except Exception as e:
-        print(f"Error sending message to Telegram: {e}")
+        logger.error("Error sending message to Telegram: %s", e)
 
 
 def pull_new_messages():
     """Pulls the database for new messages and sends them to Telegram, caching last sent ID."""
-    print("Starting background thread to pull for new messages...")
+    logger.info("Starting background thread to pull for new messages...")
 
     def load_sent_ids():
         if not os.path.exists(SENT_IDS_FILE):
@@ -366,14 +406,14 @@ def pull_new_messages():
                 for msg_id in sent_ids:
                     f.write(f"{msg_id}\n")
         except Exception as e:
-            print(f"Error saving sent IDs file: {e}")
+            logger.error("Error saving sent IDs file: %s", e)
     
     sent_ids = load_sent_ids()
 
     while True:
         conn = get_db_connection()
         if not conn:
-            print("Pulling thread: Database connection failed. Retrying in 60s.")
+            logger.warning("Pulling thread: Database connection failed. Retrying in 60s.")
             time.sleep(60)
             continue
 
@@ -407,7 +447,7 @@ def pull_new_messages():
                 save_sent_ids(sent_ids)
 
         except mysql.connector.Error as err:
-            print(f"Pulling thread error: {err}")
+            logger.error("Pulling thread error: %s", err)
         finally:
             cursor.close()
             conn.close()
@@ -446,9 +486,9 @@ def main():
             )
             _http_send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text)
         except Exception as e:
-            print(f"Startup ping failed: {e}")
+            logger.error("Startup ping failed: %s", e)
 
-    print("Starting Telegram bot (run_polling in main thread)...")
+    logger.info("Starting Telegram bot (run_polling in main thread)...")
     app.run_polling(allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"])
 
 
